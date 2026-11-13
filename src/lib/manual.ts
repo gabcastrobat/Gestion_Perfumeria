@@ -2,8 +2,10 @@
  * Manual de usuario (pantalla Ajustes → Manual de usuario).
  * Fuente: «Manual de usuario — Gestión de Perfumerías» (11 nov 2026), con el texto ajustado a como se ve hoy la app:
  *  - El menú dice «Ajustes» (antes «Mi cuenta») y el tamaño de letra se cambia en Ajustes → Apariencia.
- *  - Cada rol ve solo sus secciones; las referencias «(sección N)» solo apuntan a secciones que ese rol ve
- *    (lo comprueba manual.test.ts). Un bloque con `roles` solo se muestra a esos roles.
+ *  - Cada rol ve solo sus secciones, numeradas 1, 2, 3… sin saltos (seccionesPara). Aquí se escriben con el
+ *    número del manual completo; las referencias «(sección N)» se cambian solas al número que ve cada rol
+ *    y solo deben apuntar a secciones que ese rol ve (lo comprueba manual.test.ts).
+ *    Un bloque con `roles` solo se muestra a esos roles.
  * Formato del texto: **negrita** entre dos asteriscos dobles; `tramos()` lo separa para dibujarlo.
  */
 
@@ -757,11 +759,40 @@ export const MANUAL: SeccionManual[] = [
   },
 ];
 
-/** Secciones que ve un rol, con solo los bloques que le corresponden. */
+/** Cambia cada «sección N» del texto por su número nuevo (si N está en el mapa). */
+function renumerarReferencias(texto: string, mapa: Map<number, number>): string {
+  return texto.replace(/(secci[oó]n )(\d+)/gi, (todo, palabra: string, n: string) => {
+    const nuevo = mapa.get(Number(n));
+    return nuevo === undefined ? todo : `${palabra}${nuevo}`;
+  });
+}
+
+function renumerarBloque(b: BloqueManual, mapa: Map<number, number>): BloqueManual {
+  const r = (t: string) => renumerarReferencias(t, mapa);
+  switch (b.tipo) {
+    case "parrafo":
+    case "subtitulo":
+      return { ...b, texto: r(b.texto) };
+    case "numerada":
+    case "vinetas":
+      return { ...b, items: b.items.map(r) };
+    case "tabla":
+      return { ...b, columnas: b.columnas.map(r), filas: b.filas.map((f) => f.map(r)) };
+  }
+}
+
+/**
+ * Secciones que ve un rol, con solo los bloques que le corresponden.
+ * Se numeran de nuevo 1, 2, 3… para ese rol (sin saltos por las secciones que no ve),
+ * y las referencias «(sección N)» del texto se cambian al número nuevo.
+ */
 export function seccionesPara(rol: RolManual): SeccionManual[] {
-  return MANUAL.filter((s) => s.roles.includes(rol)).map((s) => ({
+  const visibles = MANUAL.filter((s) => s.roles.includes(rol));
+  const mapa = new Map(visibles.map((s, i) => [s.numero, i + 1]));
+  return visibles.map((s, i) => ({
     ...s,
-    bloques: s.bloques.filter((b) => !b.roles || b.roles.includes(rol)),
+    numero: i + 1,
+    bloques: s.bloques.filter((b) => !b.roles || b.roles.includes(rol)).map((b) => renumerarBloque(b, mapa)),
   }));
 }
 
