@@ -1,6 +1,7 @@
 /**
  * Gastos del local (vendedor):
  *  - Registrar un gasto: categoría, valor, medio de pago, fecha y descripción opcional.
+ *    La categoría «Gastos personales» (de la dueña) se ve aparte y no se resta de la utilidad.
  *  - Ver los gastos del mes con filtro por mes y categoría, y sus totales.
  *  - Eliminar solo los gastos propios registrados hoy (con confirmación).
  */
@@ -19,7 +20,7 @@ import { anioMesColombia, hoyColombia, MESES, pesos } from "@/lib/formato";
 import { api } from "@/lib/http";
 import { MEDIOS_PAGO_GASTO } from "@/lib/pagos";
 import { gastoSchema } from "@/lib/validaciones";
-import type { GastoFila, ListaGastos, MedioPagoGasto, NombreActivo } from "@/tipos";
+import type { CategoriaGastoOpcion, GastoFila, ListaGastos, MedioPagoGasto } from "@/tipos";
 
 const HOY = anioMesColombia(new Date());
 const ANIOS = Array.from({ length: 6 }, (_, i) => HOY.anio - i);
@@ -42,7 +43,7 @@ export default function PaginaGastos() {
   const [eliminando, setEliminando] = useState<GastoFila | null>(null);
   const [borrando, setBorrando] = useState(false);
 
-  const consultaCategorias = useConsulta<{ categorias: NombreActivo[] }>("/api/gastos/categorias", { alError: avisos.error });
+  const consultaCategorias = useConsulta<{ categorias: CategoriaGastoOpcion[] }>("/api/gastos/categorias", { alError: avisos.error });
   const categorias = consultaCategorias.datos?.categorias ?? [];
 
   const params = new URLSearchParams({ anio: String(anio), mes: String(mes) });
@@ -130,7 +131,7 @@ function FormularioGasto({
   cargandoCategorias,
   onGuardado,
 }: {
-  categorias: NombreActivo[];
+  categorias: CategoriaGastoOpcion[];
   cargandoCategorias: boolean;
   onGuardado: () => void;
 }) {
@@ -179,6 +180,11 @@ function FormularioGasto({
             value={form.categoriaId}
             onChange={(e) => setForm({ ...form, categoriaId: e.target.value })}
             error={errores.categoriaId}
+            ayuda={
+              categorias.find((c) => c.id === form.categoriaId)?.personal
+                ? "Gasto personal de la dueña: se guarda aparte y no se resta de la utilidad del negocio."
+                : undefined
+            }
             obligatorio
           >
             <option value="">Elige una categoría</option>

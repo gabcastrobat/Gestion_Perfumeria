@@ -2,8 +2,10 @@
  * Gastos empresariales de cada local y sus categorías.
  *  - El vendedor registra gastos y solo puede eliminar los suyos registrados hoy.
  *  - El administrador define las categorías y consulta los gastos de cada local.
- *  - Cada gasto guarda una copia del nombre de la categoría y del usuario:
+ *  - Cada gasto guarda una copia del nombre de la categoría, del usuario y de si es personal:
  *    el historial no cambia si luego se renombran o se eliminan.
+ *  - Cada local tiene la categoría «Gastos personales» (gastos propios de la dueña): esos gastos
+ *    se muestran aparte y no se restan de la utilidad (ver src/lib/gastos.ts).
  */
 import "server-only";
 import { and, asc, desc, eq, gte, lt, sql, type SQL } from "drizzle-orm";
@@ -11,15 +13,39 @@ import { db } from "@/db";
 import { categoriasGasto, gastos } from "@/db/schema";
 import { ApiError, type VendedorSesion } from "@/lib/api";
 import { hoyColombia, rangoDias } from "@/lib/formato";
+import { NOMBRE_CATEGORIA_PERSONAL, totalesGastos } from "@/lib/gastos";
 import type { GastoFila, ListaGastos, MedioPagoGasto } from "@/tipos";
 import { obtenerLocal } from "./locales";
 import { clasificarNombres, ordenarPorNombre } from "./sectores";
 
 /* ------------------------------- Categorías ------------------------------- */
 
+/**
+ * Garantiza que el local tenga su categoría de gastos personales (no hace nada si ya la tiene).
+ * Si ya existe una categoría llamada «Gastos personales», se marca como personal en vez de duplicarla.
+ */
+export async function asegurarCategoriaPersonal(localId: string) {
+  const personal = await db.query.categoriasGasto.findFirst({
+    where: and(eq(categoriasGasto.localId, localId), eq(categoriasGasto.personal, true)),
+    columns: { id: true },
+  });
+  if (personal) return;
+  const mismoNombre = await db.query.categoriasGasto.findFirst({
+    where: and(eq(categoriasGasto.localId, localId), sql`lower(${categoriasGasto.nombre}) = lower(${NOMBRE_CATEGORIA_PERSONAL})`),
+    columns: { id: true },
+  });
+  if (mismoNombre) {
+    await db.update(categoriasGasto).set({ personal: true }).where(eq(categoriasGasto.id, mismoNombre.id));
+  } else {
+    // onConflictDoNothing: si dos pantallas lo piden a la vez, el índice único evita el duplicado
+    await db.insert(categoriasGasto).values({ localId, nombre: NOMBRE_CATEGORIA_PERSONAL, personal: true }).onConflictDoNothing();
+  }
+}
+
 export async function listarCategorias(localId: string, opciones: { soloActivas?: boolean } = {}) {
+  await asegurarCategoriaPersonal(localId);
   const lista = await db
-    .select({ id: categoriasGasto.id, nombre: categoriasGasto.nombre, activo: categoriasGasto.activo })
+    .select({ id: categoriasGasto.id, nombre: categoriasGasto.nombre, activo: categoriasGasto.activo, personal: categoriasGasto.personal })
     .from(categoriasGasto)
     .where(and(eq(categoriasGasto.localId, localId), opciones.soloActivas ? eq(categoriasGasto.activo, true) : undefined));
   return ordenarPorNombre(lista);
@@ -76,6 +102,7 @@ export async function crearGasto(vendedor: VendedorSesion, datos: DatosGasto) {
     usuarioNombre: vendedor.nombre,
     categoriaId: categoria.id,
     categoriaNombre: categoria.nombre,
+    personal: categoria.personal,
     descripcion: datos.descripcion || null,
     valor: datos.valor,
     medioPago: datos.medioPago,
@@ -106,6 +133,7 @@ export async function listarGastos(
   const lista: GastoFila[] = filas.map((g) => ({
     id: g.id,
     categoriaNombre: g.categoriaNombre,
+    personal: g.personal,
     descripcion: g.descripcion,
     valor: g.valor,
     medioPago: g.medioPago,
@@ -114,10 +142,7 @@ export async function listarGastos(
     puedeEliminar: eliminable(g, usuarioId),
   }));
 
-  const sumar = (medio?: MedioPagoGasto) =>
-    lista.filter((g) => !medio || g.medioPago === medio).reduce((acc, g) => acc + g.valor, 0);
-
-  return { gastos: lista, total: sumar(), totalEfectivo: sumar("EFECTIVO"), totalTransferencia: sumar("TRANSFERENCIA") };
+  return { gastos: lista, ...totalesGastos(lista) };
 }
 
 export async function eliminarGasto(vendedor: VendedorSesion, id: string) {

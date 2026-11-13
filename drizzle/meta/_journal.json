@@ -29,6 +29,27 @@
       "when": 1794366037747,
       "tag": "0003_movimientos_inventario",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794595580295,
+      "tag": "0004_gastos_personales",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794595761483,
+      "tag": "0005_proveedores",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794595763100,
+      "tag": "0006_compras_credito_proveedores",
+      "breakpoints": true
     }
   ]
 }

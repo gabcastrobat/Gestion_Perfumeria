@@ -6,13 +6,14 @@
  */
 import "server-only";
 import { and, asc, desc, eq, gt, ilike, lte, or, sql, type SQL } from "drizzle-orm";
-import { db } from "@/db";
+import { db, type Transaccion } from "@/db";
 import { facturaItems, marcas, productos } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import type { Genero, Publico, Tamano, TipoProducto } from "@/lib/clasificacion";
 import { escaparLike, normalizarTexto } from "@/lib/formato";
 import type { EstadoStock, FiltrosInventario } from "@/lib/inventario";
 import type { Producto, ProductoVenta } from "@/tipos";
+import { registrarCompra, type DatosCompra } from "./compras";
 import { validarMarcaDelLocal } from "./marcas";
 import { registrarMovimientos, type Autor } from "./movimientos";
 
@@ -168,6 +169,8 @@ async function moverStock(
   id: string,
   movimiento: { tipo: "INGRESO" | "AJUSTE"; cantidad: number; nota?: string },
   autor: Autor,
+  /** Paso extra dentro de la misma transacción (por ejemplo, registrar la compra al proveedor). */
+  despues?: (tx: Transaccion, producto: { id: string; nombre: string }) => Promise<unknown>,
 ) {
   return db.transaction(async (tx) => {
     const [actualizado] = await tx
@@ -190,13 +193,30 @@ async function moverStock(
     await registrarMovimientos(tx, [
       { localId, productoId: id, tipo: movimiento.tipo, cantidad: movimiento.cantidad, stockResultante: actualizado.stock, autor, nota: movimiento.nota },
     ]);
+    if (despues) await despues(tx, actualizado);
     return actualizado;
   });
 }
 
-/** Llegó mercancía: suma unidades (INGRESO). */
-export function agregarUnidades(localId: string, id: string, datos: { cantidad: number; nota?: string }, autor: Autor) {
-  return moverStock(localId, id, { tipo: "INGRESO", cantidad: datos.cantidad, nota: datos.nota }, autor);
+/**
+ * Llegó mercancía: suma unidades (INGRESO).
+ * Si se indica la compra (proveedor, valor y medio de pago), se registra en la misma transacción;
+ * pagada a crédito queda como cuenta por pagar al proveedor.
+ */
+export function agregarUnidades(
+  localId: string,
+  id: string,
+  datos: { cantidad: number; nota?: string; compra?: DatosCompra },
+  autor: Autor,
+) {
+  const { compra } = datos;
+  return moverStock(
+    localId,
+    id,
+    { tipo: "INGRESO", cantidad: datos.cantidad, nota: datos.nota },
+    autor,
+    compra && ((tx, producto) => registrarCompra(tx, { ...compra, localId, producto, cantidad: datos.cantidad, autor, nota: datos.nota })),
+  );
 }
 
 /** Corrección manual (daño, conteo…): suma o resta y SIEMPRE lleva el motivo (AJUSTE). */
