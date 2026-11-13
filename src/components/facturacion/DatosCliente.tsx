@@ -15,6 +15,9 @@ import type { ClienteDatos, NombreActivo } from "@/tipos";
 import { Mensaje } from "../ui/Basicos";
 import { Campo, Selector } from "../ui/Campo";
 
+/** Cada campo ocupa 3 filas de la cuadrícula (etiqueta, campo, ayuda) y se alinea con su vecino. */
+const EN_FILA = "md:row-span-3 md:grid md:grid-rows-subgrid md:gap-y-0 md:[&>label]:self-end";
+
 export const CLIENTE_VACIO: ClienteDatos = { identificacion: "", nombre: "", telefono: "", direccion: "", sector: "" };
 
 interface Props {
@@ -113,7 +116,7 @@ export function DatosCliente({ valor, onCambio, errores, sectores }: Props) {
         : "Si el cliente ya compró antes, sus datos se llenan solos.";
 
   return (
-    <fieldset className="grid gap-5 md:grid-cols-2">
+    <fieldset className="grid items-start gap-5 md:grid-cols-2">
       <legend className="titulo-seccion mb-3 text-2xl font-bold">1. Datos del cliente</legend>
       <div className="relative md:col-span-2">
         <Campo
@@ -213,38 +216,47 @@ export function DatosCliente({ valor, onCambio, errores, sectores }: Props) {
         error={errores.telefono}
         obligatorio
       />
-      <Campo
-        etiqueta="Dirección completa (con barrio)"
-        autoComplete="off"
-        value={valor.direccion}
-        onChange={(e) => cambiar("direccion", e.target.value)}
-        error={errores.direccion}
-        ayuda="Ejemplo: Calle 18 #25-30, barrio Las Cuadras"
-        obligatorio
-      />
-      {sectores?.length === 0 ? (
-        <div className="md:col-span-2">
-          <Mensaje tono="alerta" titulo="Sector">
-            El administrador aún no ha agregado sectores para este local
-          </Mensaje>
-        </div>
-      ) : (
-        <Selector
-          className="md:col-span-2"
-          etiqueta="Sector"
-          value={sectores?.some((s) => s.nombre === valor.sector) ? valor.sector : ""}
-          onChange={(e) => cambiar("sector", e.target.value)}
-          error={errores.sector}
+      {/*
+        Dirección y sector en la misma fila (en celular, uno debajo del otro). Con subgrid, la etiqueta,
+        el campo y la ayuda de los dos comparten filas: los campos quedan alineados aunque una etiqueta
+        ocupe dos líneas (por ejemplo a 768 px o con letra grande).
+      */}
+      <div className="grid gap-5 md:col-span-2 md:grid-cols-2">
+        <Campo
+          className={EN_FILA}
+          etiqueta="Dirección con barrio"
+          autoComplete="off"
+          value={valor.direccion}
+          onChange={(e) => cambiar("direccion", e.target.value)}
+          error={errores.direccion}
+          ayuda="Ejemplo: Calle 18 #25-30, barrio Las Cuadras"
           obligatorio
-        >
-          <option value="">{sectores ? "Elige un sector" : "Cargando sectores…"}</option>
-          {sectores?.map((s) => (
-            <option key={s.id} value={s.nombre}>
-              {s.nombre}
-            </option>
-          ))}
-        </Selector>
-      )}
+        />
+        {sectores?.length === 0 ? (
+          <div className="md:row-span-3 md:self-end">
+            <Mensaje tono="alerta" titulo="Sector">
+              El administrador aún no ha agregado sectores para este local
+            </Mensaje>
+          </div>
+        ) : (
+          <Selector
+            className={EN_FILA}
+            etiqueta="Sector"
+            ayuda="Zona de la ciudad donde vive el cliente."
+            value={sectores?.some((s) => s.nombre === valor.sector) ? valor.sector : ""}
+            onChange={(e) => cambiar("sector", e.target.value)}
+            error={errores.sector}
+            obligatorio
+          >
+            <option value="">{sectores ? "Elige un sector" : "Cargando sectores…"}</option>
+            {sectores?.map((s) => (
+              <option key={s.id} value={s.nombre}>
+                {s.nombre}
+              </option>
+            ))}
+          </Selector>
+        )}
+      </div>
     </fieldset>
   );
 }
